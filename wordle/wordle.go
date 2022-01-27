@@ -2,7 +2,6 @@ package wordle
 
 import (
 	"fmt"
-	"strings"
 )
 
 type Wordle struct {
@@ -18,30 +17,46 @@ func NewWordle(word string) Wordle {
 }
 
 func (w *Wordle) Guess(word string) (Guess, error) {
-	var guess Guess
-
 	switch {
 	case len(w.word) != len(word):
-		return guess, fmt.Errorf("guessed word length does not match the wordle")
+		return Guess{}, fmt.Errorf("guessed word length does not match the wordle")
 	case w.finished:
-		return guess, fmt.Errorf("already guessed the wordle")
+		return Guess{}, fmt.Errorf("already guessed the wordle")
 	}
 
+	guess := make(Guess, len(w.word))
 	for i := range word {
-		lr := LetterResult{
-			Letter: string(word[i]),
+		guess[i].Letter = string(word[i])
+		guess[i].Result = NotInWord // default to grey
+	}
+
+	used := make([]bool, len(w.word))
+
+	// determine which letters are in correct spot
+	for i := range word {
+		if w.word[i] == word[i] {
+			used[i] = true
+			guess[i].Result = InWordAndCorrectSpot
+		}
+	}
+
+	freq := make(map[string]int)
+	for i := range w.word {
+		if !used[i] {
+			freq[string(w.word[i])]++
+		}
+	}
+
+	// determine which letters can be marked yellow
+	for i := range word {
+		if guess[i].Result == InWordAndCorrectSpot {
+			continue
 		}
 
-		switch {
-		case w.word[i] == word[i]:
-			lr.Result = InWordAndCorrectSpot
-		case strings.Contains(w.word, string(word[i])):
-			lr.Result = InWord
-		default:
-			lr.Result = NotInWord
+		if freq[string(word[i])] > 0 {
+			guess[i].Result = InWordButNotSpot
+			freq[string(word[i])]--
 		}
-
-		guess = append(guess, lr)
 	}
 
 	w.guesses = append(w.guesses, guess)

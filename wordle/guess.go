@@ -11,7 +11,7 @@ type Result string
 
 const (
 	NotInWord            Result = "NotInWord"
-	InWord               Result = "InWord"
+	InWordButNotSpot     Result = "InWordButNotSpot"
 	InWordAndCorrectSpot Result = "InWordAndCorrectSpot"
 )
 

@@ -19,6 +19,7 @@ func main() {
 	}
 
 	game := wordle.NewWordle(realWord)
+
 	solver, err := wordle.NewSolver(game, dict)
 	if err != nil {
 		log.Fatalf("unable to create solver: %s", err)

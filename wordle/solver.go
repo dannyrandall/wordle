@@ -5,149 +5,133 @@ import (
 	"log"
 	"sort"
 	"strings"
-	"time"
 )
 
 type Solver struct {
-	wordle       Wordle
+	game         Wordle
 	dict         []string
 	guessedWords map[string]bool
-
-	potentialLetters []map[rune]bool
-	yellowLetters    string
 }
 
-func NewSolver(w Wordle, dict []string) (Solver, error) {
-	if len(w.Guesses()) > 0 {
+func NewSolver(game Wordle, dict []string) (Solver, error) {
+	if len(game.Guesses()) > 0 {
 		return Solver{}, fmt.Errorf("wordle has already been played")
 	}
 
-	// make sure wordle is in dict?
-	var correctLenDict []string
+	// TODO make sure wordle is in dict?
+	// filter out words that don't match wordle length from dict
+	var d []string
 	for _, word := range dict {
-		if len(word) == w.Len() {
-			correctLenDict = append(correctLenDict, word)
+		if len(word) == game.Len() {
+			d = append(d, word)
 		}
 	}
 
 	s := Solver{
-		wordle:           w,
-		dict:             correctLenDict,
-		guessedWords:     make(map[string]bool),
-		potentialLetters: make([]map[rune]bool, w.Len()),
+		game:         game,
+		dict:         d,
+		guessedWords: make(map[string]bool),
 	}
 
-	for i := range s.potentialLetters {
-		s.potentialLetters[i] = map[rune]bool{
-			'a': true,
-			'b': true,
-			'c': true,
-			'd': true,
-			'e': true,
-			'f': true,
-			'g': true,
-			'h': true,
-			'i': true,
-			'j': true,
-			'k': true,
-			'l': true,
-			'm': true,
-			'n': true,
-			'o': true,
-			'p': true,
-			'q': true,
-			'r': true,
-			's': true,
-			't': true,
-			'u': true,
-			'v': true,
-			'w': true,
-			'x': true,
-			'y': true,
-			'z': true,
-		}
-	}
-
-	s.updateDict()
+	s.sortDict()
 	return s, nil
 }
 
 func (s *Solver) Solve() (string, []Guess) {
 	for {
 		guess := s.dict[0]
-		log.Printf("Remaining Words: %v. Total Guesses: %v. Guess: %q", len(s.dict), len(s.wordle.Guesses()), guess)
+		log.Printf("Remaining Words: %v. Total Guesses: %v. Guess: %q", len(s.dict), len(s.game.Guesses()), guess)
 
-		res, err := s.wordle.Guess(guess)
+		res, err := s.game.Guess(guess)
 		if err != nil {
-			panic(err)
+			panic(err) // TODO handle
 		}
 		if res.Correct() {
-			return res.Word(), s.wordle.Guesses()
+			return res.Word(), s.game.Guesses()
 		}
+
+		lettersInWordButNotSpots := make(map[string][]int)
 
 		for i, lr := range res {
 			switch lr.Result {
 			case NotInWord:
-				s.markLetterGrey(rune(lr.Letter[0]))
-			case InWord:
-				s.markLetterYellow(i, rune(lr.Letter[0]))
+				s.filterNotInWord(lr.Letter)
+			case InWordButNotSpot:
+				lettersInWordButNotSpots[lr.Letter] = append(lettersInWordButNotSpots[lr.Letter], i)
 			case InWordAndCorrectSpot:
-				s.markLetterGreen(i, rune(lr.Letter[0]))
+				s.filterInWordAndCorrectSpot(lr.Letter, i)
 			}
 		}
 
-		s.updateDict()
+		for letter, spots := range lettersInWordButNotSpots {
+			s.filterInWordButNotSpots(letter, spots)
+		}
 
-		time.Sleep(1 * time.Second)
+		s.sortDict()
 	}
 }
 
-func (s *Solver) markLetterGrey(r rune) {
-	for i := range s.potentialLetters {
-		s.potentialLetters[i][r] = false
-	}
-}
-
-func (s *Solver) markLetterGreen(i int, r rune) {
-	s.potentialLetters[i] = map[rune]bool{
-		r: true,
-	}
-}
-
-func (s *Solver) markLetterYellow(i int, r rune) {
-	// it can't be in position i
-	s.potentialLetters[i][r] = false
-
-	if !strings.ContainsAny(s.yellowLetters, string(r)) {
-		s.yellowLetters += string(r)
-	}
-}
-
-func (s *Solver) updateDict() {
-	var validWords []string
-
+// filterNotInWord removes all words from dict that contain letter.
+func (s *Solver) filterNotInWord(letter string) {
+	var d []string
 	for _, word := range s.dict {
-		if s.couldWordWork(word) {
-			validWords = append(validWords, word)
+		if !strings.Contains(word, letter) {
+			d = append(d, word)
 		}
 	}
 
-	wordScores := make(map[string]int)
-	for _, word := range validWords {
-		wordScores[word] = s.wordScore(word, validWords)
+	s.dict = d
+}
+
+// filterInWordAndCorrectSpot removes all words from dict that don't contain letter at spot.
+func (s *Solver) filterInWordAndCorrectSpot(letter string, spot int) {
+	var d []string
+	for _, word := range s.dict {
+		if string(word[spot]) == letter {
+			d = append(d, word)
+		}
 	}
 
-	sort.Slice(validWords, func(i, j int) bool {
-		return wordScores[validWords[i]] > wordScores[validWords[j]]
-	})
+	s.dict = d
+}
 
-	s.dict = validWords
+// filterInWordAndCorrectSpot removes all words from dict that have letter in any of the given spots and don't have at least len(spots) of letter in them.
+func (s *Solver) filterInWordButNotSpots(letter string, spots []int) {
+	var d []string
+	for _, word := range s.dict {
+		if !letterInSpots(word, letter, spots) && strings.Count(word, letter) >= len(spots) {
+			d = append(d, word)
+		}
+	}
+
+	s.dict = d
+}
+
+// letterInSpots returns true if word has letter at any of the given spots
+func letterInSpots(word string, letter string, spots []int) bool {
+	for _, spot := range spots {
+		if string(word[spot]) == letter {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (s *Solver) sortDict() {
+	wordScores := make(map[string]int)
+	for _, word := range s.dict {
+		wordScores[word] = s.wordScore(word, s.dict)
+	}
+
+	sort.Slice(s.dict, func(i, j int) bool {
+		return wordScores[s.dict[i]] > wordScores[s.dict[j]]
+	})
 }
 
 // a word is more valuable the more letters it shares with other words.
 // v0: words that have common letters
 // *v1: number of letters overall in common accross all words
-// v2: gotta factor in letters that have been guessed already/already know position
 func (s *Solver) wordScore(w string, otherWords []string) int {
 	score := 0
 	for _, word := range otherWords {
@@ -166,27 +150,4 @@ func (s *Solver) wordScore(w string, otherWords []string) int {
 	}
 
 	return score
-}
-
-// couldWordWork checks that each of the letters in word
-// matches with the potential letters for that index
-func (s *Solver) couldWordWork(word string) bool {
-	if s.guessedWords[word] {
-		return false
-	}
-
-	for i, r := range word {
-		if !s.potentialLetters[i][r] {
-			return false
-		}
-	}
-
-	// make sure it has all the yellow letters
-	for _, r := range s.yellowLetters {
-		if !strings.ContainsRune(word, r) {
-			return false
-		}
-	}
-
-	return true
 }
